@@ -1,7 +1,7 @@
 [project]
-name = "langgraph-fastapi-template"
+name = "agent"
 version = "0.1.0"
-description = "LangGraph FastAPI Template"
+description = "agent project"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -38,6 +38,10 @@ dependencies = [
     "tenacity>=9.1.2",
     "mem0ai>=1.0.0",
     "uvloop>=0.22.1",
+    "langchain-google-genai>=4.2.1",
+    "langchain-postgres>=0.0.17",
+    "langchain-text-splitters>=1.0.0",
+    "pypdf>=5.0.0",
 ]
 
 [project.optional-dependencies]

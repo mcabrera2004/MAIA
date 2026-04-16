@@ -16,3 +16,4 @@ class GraphState(BaseModel):
         default_factory=list, description="The messages in the conversation"
     )
     long_term_memory: str = Field(default="", description="The long term memory of the conversation")
+    subject: str = Field(default="general", description="The subject/class for RAG filtering")

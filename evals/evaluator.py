@@ -10,7 +10,7 @@ from datetime import (
 )
 from time import sleep
 
-import openai
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langfuse import Langfuse
 from langfuse.api.resources.commons.types.trace_with_details import TraceWithDetails
 from tqdm import tqdm
@@ -45,8 +45,11 @@ class Evaluator:
     """
 
     def __init__(self):
-        """Initialize Evaluator with OpenAI and Langfuse clients."""
-        self.client = openai.AsyncOpenAI(api_key=settings.EVALUATION_API_KEY, base_url=settings.EVALUATION_BASE_URL)
+        """Initialize Evaluator with Google Gemini and Langfuse clients."""
+        self.llm = ChatGoogleGenerativeAI(
+            model=settings.EVALUATION_LLM,
+            google_api_key=settings.EVALUATION_API_KEY,
+        ).with_structured_output(ScoreSchema)
         self.langfuse = Langfuse(
             public_key=settings.LANGFUSE_PUBLIC_KEY,
             secret_key=settings.LANGFUSE_SECRET_KEY,
@@ -146,15 +149,15 @@ class Evaluator:
         if not input or not output:
             logger.error(f"Metric {metric_name} evaluation failed", input=input, output=output)
             return None
-        score = await self._call_openai(system_metric_prompt, input, output)
+        score = await self._call_llm(system_metric_prompt, input, output)
         if score:
             logger.info(f"Metric {metric_name} evaluation completed successfully", score=score)
         else:
             logger.error(f"Metric {metric_name} evaluation failed")
         return score
 
-    async def _call_openai(self, metric_system_prompt: str, input: str, output: str) -> ScoreSchema | None:
-        """Call OpenAI API to evaluate a trace.
+    async def _call_llm(self, metric_system_prompt: str, input: str, output: str) -> ScoreSchema | None:
+        """Call Google Gemini API to evaluate a trace.
 
         Args:
             metric_system_prompt: System prompt defining the evaluation metric.
@@ -167,18 +170,16 @@ class Evaluator:
         num_retries = 3
         for _ in range(num_retries):
             try:
-                response = await self.client.beta.chat.completions.parse(
-                    model=settings.EVALUATION_LLM,
-                    messages=[
+                response = await self.llm.ainvoke(
+                    [
                         {"role": "system", "content": metric_system_prompt},
                         {"role": "user", "content": f"Input: {input}\nGeneration: {output}"},
-                    ],
-                    response_format=ScoreSchema,
+                    ]
                 )
-                return response.choices[0].message.parsed
+                return response
             except Exception as e:
                 SLEEP_TIME = 10
-                logger.error("Error calling OpenAI", error=str(e), sleep_time=SLEEP_TIME)
+                logger.error("Error calling Gemini", error=str(e), sleep_time=SLEEP_TIME)
                 sleep(SLEEP_TIME)
                 continue
         return None

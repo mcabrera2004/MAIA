@@ -111,19 +111,21 @@ def validate_password_strength(password: str) -> bool:
     Raises:
         ValueError: If the password is not strong enough with reason
     """
-    if len(password) < 8:
-        raise ValueError("Password must be at least 8 characters long")
+    from app.core.config import settings
 
-    if not re.search(r"[A-Z]", password):
+    if len(password) < settings.MIN_PASSWORD_LENGTH:
+        raise ValueError(f"Password must be at least {settings.MIN_PASSWORD_LENGTH} characters long")
+
+    if settings.REQUIRE_UPPERCASE and not re.search(r"[A-Z]", password):
         raise ValueError("Password must contain at least one uppercase letter")
 
-    if not re.search(r"[a-z]", password):
+    if settings.REQUIRE_LOWERCASE and not re.search(r"[a-z]", password):
         raise ValueError("Password must contain at least one lowercase letter")
 
-    if not re.search(r"[0-9]", password):
+    if settings.REQUIRE_NUMBERS and not re.search(r"[0-9]", password):
         raise ValueError("Password must contain at least one number")
 
-    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
+    if settings.REQUIRE_SPECIAL_CHARS and not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
         raise ValueError("Password must contain at least one special character")
 
     return True

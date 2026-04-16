@@ -66,6 +66,7 @@ class LangGraphAgent:
         self._connection_pool: Optional[AsyncConnectionPool] = None
         self._graph: Optional[CompiledStateGraph] = None
         self.memory: Optional[AsyncMemory] = None
+        self._lock = asyncio.Lock()
         logger.info(
             "langgraph_agent_initialized",
             model=settings.DEFAULT_LLM_MODEL,
@@ -89,10 +90,19 @@ class LangGraphAgent:
                         },
                     },
                     "llm": {
-                        "provider": "openai",
-                        "config": {"model": settings.LONG_TERM_MEMORY_MODEL},
+                        "provider": "gemini",
+                        "config": {
+                            "model": settings.LONG_TERM_MEMORY_MODEL,
+                            "api_key": settings.GOOGLE_API_KEY,
+                        },
                     },
-                    "embedder": {"provider": "openai", "config": {"model": settings.LONG_TERM_MEMORY_EMBEDDER_MODEL}},
+                    "embedder": {
+                        "provider": "gemini",
+                        "config": {
+                            "model": settings.LONG_TERM_MEMORY_EMBEDDER_MODEL,
+                            "api_key": settings.GOOGLE_API_KEY,
+                        },
+                    },
                     # "custom_fact_extraction_prompt": load_custom_fact_extraction_prompt(),
                 }
             )
@@ -191,7 +201,10 @@ class LangGraphAgent:
             else settings.DEFAULT_LLM_MODEL
         )
 
-        SYSTEM_PROMPT = load_system_prompt(long_term_memory=state.long_term_memory)
+        SYSTEM_PROMPT = load_system_prompt(
+            long_term_memory=state.long_term_memory,
+            subject=state.subject,
+        )
 
         # Prepare messages with system prompt
         messages = prepare_messages(state.messages, current_llm, SYSTEM_PROMPT)
@@ -199,7 +212,9 @@ class LangGraphAgent:
         try:
             # Use LLM service with automatic retries and circular fallback
             with llm_inference_duration_seconds.labels(model=model_name).time():
-                response_message = await self.llm_service.call(dump_messages(messages))
+                response_message = await self.llm_service.call(
+                    dump_messages(messages), callbacks=config.get("callbacks")
+                )
 
             # Process response to handle structured content blocks
             response_message = process_llm_response(response_message)
@@ -255,7 +270,14 @@ class LangGraphAgent:
         Returns:
             Optional[CompiledStateGraph]: The configured LangGraph instance or None if init fails
         """
-        if self._graph is None:
+        if self._graph is not None:
+            return self._graph
+
+        async with self._lock:
+            # Check again inside the lock
+            if self._graph is not None:
+                return self._graph
+
             try:
                 graph_builder = StateGraph(GraphState)
                 graph_builder.add_node("chat", self._chat, ends=["tool_call", END])
@@ -267,7 +289,14 @@ class LangGraphAgent:
                 connection_pool = await self._get_connection_pool()
                 if connection_pool:
                     checkpointer = AsyncPostgresSaver(connection_pool)
-                    await checkpointer.setup()
+                    try:
+                        await checkpointer.setup()
+                    except Exception as setup_error:
+                        # If it's a unique violation, it means another worker already set it up
+                        if "unique constraint" in str(setup_error).lower():
+                            logger.info("checkpointer_setup_already_complete_in_another_worker")
+                        else:
+                            raise setup_error
                 else:
                     # In production, proceed without checkpointer if needed
                     checkpointer = None
@@ -299,6 +328,7 @@ class LangGraphAgent:
         messages: list[Message],
         session_id: str,
         user_id: Optional[str] = None,
+        subject: str = "general",
     ) -> list[dict]:
         """Get a response from the LLM.
 
@@ -312,12 +342,19 @@ class LangGraphAgent:
         """
         if self._graph is None:
             self._graph = await self.create_graph()
+        # Add Langfuse callbacks only if configured
+        callbacks = []
+        if settings.LANGFUSE_PUBLIC_KEY and settings.LANGFUSE_SECRET_KEY:
+            callbacks.append(CallbackHandler())
+
         config = {
             "configurable": {"thread_id": session_id},
-            "callbacks": [CallbackHandler()],
+            "callbacks": callbacks,
             "metadata": {
                 "user_id": user_id,
                 "session_id": session_id,
+                "langfuse_user_id": user_id,
+                "langfuse_session_id": session_id,
                 "environment": settings.ENVIRONMENT.value,
                 "debug": settings.DEBUG,
             },
@@ -327,7 +364,7 @@ class LangGraphAgent:
         ) or "No relevant memory found."
         try:
             response = await self._graph.ainvoke(
-                input={"messages": dump_messages(messages), "long_term_memory": relevant_memory},
+                input={"messages": dump_messages(messages), "long_term_memory": relevant_memory, "subject": subject},
                 config=config,
             )
             # Run memory update in background without blocking the response
@@ -341,7 +378,7 @@ class LangGraphAgent:
             logger.error(f"Error getting response: {str(e)}")
 
     async def get_stream_response(
-        self, messages: list[Message], session_id: str, user_id: Optional[str] = None
+        self, messages: list[Message], session_id: str, user_id: Optional[str] = None, subject: str = "general"
     ) -> AsyncGenerator[str, None]:
         """Get a stream response from the LLM.
 
@@ -353,16 +390,19 @@ class LangGraphAgent:
         Yields:
             str: Tokens of the LLM response.
         """
+        # Add Langfuse callbacks only if configured
+        callbacks = []
+        if settings.LANGFUSE_PUBLIC_KEY and settings.LANGFUSE_SECRET_KEY:
+            callbacks.append(CallbackHandler())
+
         config = {
             "configurable": {"thread_id": session_id},
-            "callbacks": [
-                CallbackHandler(
-                    environment=settings.ENVIRONMENT.value, debug=False, user_id=user_id, session_id=session_id
-                )
-            ],
+            "callbacks": callbacks,
             "metadata": {
                 "user_id": user_id,
                 "session_id": session_id,
+                "langfuse_user_id": user_id,
+                "langfuse_session_id": session_id,
                 "environment": settings.ENVIRONMENT.value,
                 "debug": settings.DEBUG,
             },
@@ -376,12 +416,25 @@ class LangGraphAgent:
 
         try:
             async for token, _ in self._graph.astream(
-                {"messages": dump_messages(messages), "long_term_memory": relevant_memory},
+                {"messages": dump_messages(messages), "long_term_memory": relevant_memory, "subject": subject},
                 config,
                 stream_mode="messages",
             ):
                 try:
-                    yield token.content
+                    content = token.content
+                    # Handle cases where content might be a list of blocks
+                    if isinstance(content, list):
+                        text_parts = []
+                        for block in content:
+                            if isinstance(block, dict):
+                                if block.get("type") == "text":
+                                    text_parts.append(block.get("text", ""))
+                            elif isinstance(block, str):
+                                text_parts.append(block)
+                        content = "".join(text_parts)
+
+                    if content:
+                        yield str(content)
                 except Exception as token_error:
                     logger.error("Error processing token", error=str(token_error), session_id=session_id)
                     # Continue with next token even if current one fails

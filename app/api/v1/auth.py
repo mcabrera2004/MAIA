@@ -28,10 +28,13 @@ from app.core.logging import (
 from app.models.session import Session
 from app.models.user import User
 from app.schemas.auth import (
+    AuthConfigResponse,
+    PasswordRequirements,
     SessionResponse,
     TokenResponse,
     UserCreate,
     UserResponse,
+    VALID_ROLES,
 )
 from app.services.database import DatabaseService
 from app.utils.auth import (
@@ -47,6 +50,26 @@ from app.utils.sanitization import (
 router = APIRouter()
 security = HTTPBearer()
 db_service = DatabaseService()
+
+
+@router.get("/config", response_model=AuthConfigResponse)
+async def get_auth_config():
+    """Get the authentication configuration and requirements.
+
+    Returns:
+        AuthConfigResponse: Password requirements and available roles.
+    """
+    return AuthConfigResponse(
+        password_requirements=PasswordRequirements(
+            min_length=settings.MIN_PASSWORD_LENGTH,
+            require_uppercase=settings.REQUIRE_UPPERCASE,
+            require_lowercase=settings.REQUIRE_LOWERCASE,
+            require_numbers=settings.REQUIRE_NUMBERS,
+            require_special_characters=settings.REQUIRE_SPECIAL_CHARS,
+            special_characters_allowed=settings.SPECIAL_CHARS_ALLOWED,
+        ),
+        roles=list(VALID_ROLES),
+    )
 
 
 async def get_current_user(
@@ -160,7 +183,7 @@ async def register_user(request: Request, user_data: UserCreate):
 
     Args:
         request: The FastAPI request object for rate limiting.
-        user_data: User registration data
+        user_data: User registration data including role (alumno/profesor)
 
     Returns:
         UserResponse: The created user info
@@ -177,13 +200,17 @@ async def register_user(request: Request, user_data: UserCreate):
         if await db_service.get_user_by_email(sanitized_email):
             raise HTTPException(status_code=400, detail="Email already registered")
 
-        # Create user
-        user = await db_service.create_user(email=sanitized_email, password=User.hash_password(password))
+        # Create user with role
+        user = await db_service.create_user(
+            email=sanitized_email,
+            password=User.hash_password(password),
+            role=user_data.role,
+        )
 
         # Create access token
         token = create_access_token(str(user.id))
 
-        return UserResponse(id=user.id, email=user.email, token=token)
+        return UserResponse(id=user.id, email=user.email, role=user.role, token=token)
     except ValueError as ve:
         logger.error("user_registration_validation_failed", error=str(ve), exc_info=True)
         raise HTTPException(status_code=422, detail=str(ve))
@@ -230,14 +257,19 @@ async def login(
             )
 
         token = create_access_token(str(user.id))
-        return TokenResponse(access_token=token.access_token, token_type="bearer", expires_at=token.expires_at)
+        return TokenResponse(
+            access_token=token.access_token,
+            token_type="bearer",
+            expires_at=token.expires_at,
+            role=user.role,
+        )
     except ValueError as ve:
         logger.error("login_validation_failed", error=str(ve), exc_info=True)
         raise HTTPException(status_code=422, detail=str(ve))
 
 
 @router.post("/session", response_model=SessionResponse)
-async def create_session(user: User = Depends(get_current_user)):
+async def create_session(user: User = Depends(get_current_user), subject: str = Form(default="general")):
     """Create a new chat session for the authenticated user.
 
     Args:
@@ -250,8 +282,16 @@ async def create_session(user: User = Depends(get_current_user)):
         # Generate a unique session ID
         session_id = str(uuid.uuid4())
 
+        # Sanitize and validate subject
+        sanitized_subject = sanitize_string(subject).lower().strip()
+        if sanitized_subject not in settings.AVAILABLE_SUBJECTS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid subject '{subject}'. Available: {', '.join(settings.AVAILABLE_SUBJECTS)}",
+            )
+
         # Create session in database
-        session = await db_service.create_session(session_id, user.id)
+        session = await db_service.create_session(session_id, user.id, subject=sanitized_subject)
 
         # Create access token for the session
         token = create_access_token(session_id)
@@ -261,10 +301,11 @@ async def create_session(user: User = Depends(get_current_user)):
             session_id=session_id,
             user_id=user.id,
             name=session.name,
+            subject=session.subject,
             expires_at=token.expires_at.isoformat(),
         )
 
-        return SessionResponse(session_id=session_id, name=session.name, token=token)
+        return SessionResponse(session_id=session_id, name=session.name, subject=session.subject, token=token)
     except ValueError as ve:
         logger.error("session_creation_validation_failed", error=str(ve), user_id=user.id, exc_info=True)
         raise HTTPException(status_code=422, detail=str(ve))
@@ -351,6 +392,7 @@ async def get_user_sessions(user: User = Depends(get_current_user)):
             SessionResponse(
                 session_id=sanitize_string(session.id),
                 name=sanitize_string(session.name),
+                subject=session.subject,
                 token=create_access_token(session.id),
             )
             for session in sessions

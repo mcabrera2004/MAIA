@@ -69,22 +69,23 @@ class DatabaseService:
             if settings.ENVIRONMENT != Environment.PRODUCTION:
                 raise
 
-    async def create_user(self, email: str, password: str) -> User:
+    async def create_user(self, email: str, password: str, role: str = "alumno") -> User:
         """Create a new user.
 
         Args:
             email: User's email address
             password: Hashed password
+            role: User role ('alumno' or 'profesor')
 
         Returns:
             User: The created user
         """
         with Session(self.engine) as session:
-            user = User(email=email, hashed_password=password)
+            user = User(email=email, hashed_password=password, role=role)
             session.add(user)
             session.commit()
             session.refresh(user)
-            logger.info("user_created", email=email)
+            logger.info("user_created", email=email, role=role)
             return user
 
     async def get_user(self, user_id: int) -> Optional[User]:
@@ -133,23 +134,24 @@ class DatabaseService:
             logger.info("user_deleted", email=email)
             return True
 
-    async def create_session(self, session_id: str, user_id: int, name: str = "") -> ChatSession:
+    async def create_session(self, session_id: str, user_id: int, name: str = "", subject: str = "general") -> ChatSession:
         """Create a new chat session.
 
         Args:
             session_id: The ID for the new session
             user_id: The ID of the user who owns the session
             name: Optional name for the session (defaults to empty string)
+            subject: The subject/class for this session (defaults to "general")
 
         Returns:
             ChatSession: The created session
         """
         with Session(self.engine) as session:
-            chat_session = ChatSession(id=session_id, user_id=user_id, name=name)
+            chat_session = ChatSession(id=session_id, user_id=user_id, name=name, subject=subject)
             session.add(chat_session)
             session.commit()
             session.refresh(chat_session)
-            logger.info("session_created", session_id=session_id, user_id=user_id, name=name)
+            logger.info("session_created", session_id=session_id, user_id=user_id, name=name, subject=subject)
             return chat_session
 
     async def delete_session(self, session_id: str) -> bool:

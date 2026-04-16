@@ -19,7 +19,7 @@ A production-ready FastAPI template for building AI agent applications with Lang
 
   - Long-term memory with mem0ai and pgvector for semantic memory storage
   - LLM Service with automatic retry logic using tenacity
-  - Multiple LLM model support (GPT-4o, GPT-4o-mini, GPT-5, GPT-5-mini, GPT-5-nano)
+  - Multiple LLM model support (Gemini 2.5 Flash, Gemini 2.5 Pro, Gemini 3 Flash, Gemini 3 Pro)
   - Streaming responses for real-time chat interactions
   - Tool calling and function execution capabilities
 
@@ -226,15 +226,15 @@ POSTGRES_USER=postgres
 POSTGRES_PASSWORD=postgres
 
 # LLM Configuration
-OPENAI_API_KEY=your_openai_api_key
-DEFAULT_LLM_MODEL=gpt-4o
+GOOGLE_API_KEY=your_google_api_key
+DEFAULT_LLM_MODEL=gemini-2.5-flash
 DEFAULT_LLM_TEMPERATURE=0.7
 MAX_TOKENS=4096
 
 # Long-Term Memory
 LONG_TERM_MEMORY_COLLECTION_NAME=agent_memories
-LONG_TERM_MEMORY_MODEL=gpt-4o-mini
-LONG_TERM_MEMORY_EMBEDDER_MODEL=text-embedding-3-small
+LONG_TERM_MEMORY_MODEL=gemini-2.5-flash
+LONG_TERM_MEMORY_EMBEDDER_MODEL=models/embedding-001
 
 # Observability
 LANGFUSE_PUBLIC_KEY=your_public_key
@@ -274,21 +274,20 @@ The LLM service provides robust, production-ready language model interactions wi
 
 ### Features
 
-- **Multiple Model Support**: Pre-configured support for GPT-4o, GPT-4o-mini, GPT-5, and GPT-5 variants
+- **Multiple Model Support**: Pre-configured support for Gemini 2.5 Flash, 2.5 Pro, 3 Flash, and 3 Pro variants
 - **Automatic Retries**: Uses tenacity for exponential backoff retry logic
-- **Reasoning Configuration**: GPT-5 models support configurable reasoning effort levels
+- **Reasoning Configuration**: Integrated thinking model support
 - **Environment-Specific Tuning**: Different parameters for development vs production
 - **Fallback Mechanisms**: Graceful degradation when primary models fail
 
 ### Supported Models
 
-| Model       | Use Case                | Reasoning Effort |
-| ----------- | ----------------------- | ---------------- |
-| gpt-5       | Complex reasoning tasks | Medium           |
-| gpt-5-mini  | Balanced performance    | Low              |
-| gpt-5-nano  | Fast responses          | Minimal          |
-| gpt-4o      | Production workloads    | N/A              |
-| gpt-4o-mini | Cost-effective tasks    | N/A              |
+| Model            | Use Case                |
+| ---------------- | ----------------------- |
+| gemini-3-pro     | Complex reasoning tasks |
+| gemini-3-flash   | Fast intelligence       |
+| gemini-2.5-pro   | Production workloads    |
+| gemini-2.5-flash | Cost-effective tasks    |
 
 ### Retry Configuration
 

@@ -9,13 +9,7 @@ from typing import (
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage
-from langchain_openai import ChatOpenAI
-from openai import (
-    APIError,
-    APITimeoutError,
-    OpenAIError,
-    RateLimitError,
-)
+from langchain_google_genai import ChatGoogleGenerativeAI
 from tenacity import (
     before_sleep_log,
     retry,
@@ -41,52 +35,39 @@ class LLMRegistry:
     # Class-level variable containing all available LLM models
     LLMS: List[Dict[str, Any]] = [
         {
-            "name": "gpt-5-mini",
-            "llm": ChatOpenAI(
-                model="gpt-5-mini",
-                api_key=settings.OPENAI_API_KEY,
-                max_tokens=settings.MAX_TOKENS,
-                reasoning={"effort": "low"},
-            ),
-        },
-        {
-            "name": "gpt-5",
-            "llm": ChatOpenAI(
-                model="gpt-5",
-                api_key=settings.OPENAI_API_KEY,
-                max_tokens=settings.MAX_TOKENS,
-                reasoning={"effort": "medium"},
-            ),
-        },
-        {
-            "name": "gpt-5-nano",
-            "llm": ChatOpenAI(
-                model="gpt-5-nano",
-                api_key=settings.OPENAI_API_KEY,
-                max_tokens=settings.MAX_TOKENS,
-                reasoning={"effort": "minimal"},
-            ),
-        },
-        {
-            "name": "gpt-4o",
-            "llm": ChatOpenAI(
-                model="gpt-4o",
+            "name": "gemini-3-pro",
+            "llm": ChatGoogleGenerativeAI(
+                model="gemini-3-pro",
+                google_api_key=settings.GOOGLE_API_KEY,
+                max_output_tokens=settings.MAX_TOKENS,
                 temperature=settings.DEFAULT_LLM_TEMPERATURE,
-                api_key=settings.OPENAI_API_KEY,
-                max_tokens=settings.MAX_TOKENS,
-                top_p=0.95 if settings.ENVIRONMENT == Environment.PRODUCTION else 0.8,
-                presence_penalty=0.1 if settings.ENVIRONMENT == Environment.PRODUCTION else 0.0,
-                frequency_penalty=0.1 if settings.ENVIRONMENT == Environment.PRODUCTION else 0.0,
             ),
         },
         {
-            "name": "gpt-4o-mini",
-            "llm": ChatOpenAI(
-                model="gpt-4o-mini",
+            "name": "gemini-3-flash",
+            "llm": ChatGoogleGenerativeAI(
+                model="gemini-3-flash",
+                google_api_key=settings.GOOGLE_API_KEY,
+                max_output_tokens=settings.MAX_TOKENS,
                 temperature=settings.DEFAULT_LLM_TEMPERATURE,
-                api_key=settings.OPENAI_API_KEY,
-                max_tokens=settings.MAX_TOKENS,
-                top_p=0.9 if settings.ENVIRONMENT == Environment.PRODUCTION else 0.8,
+            ),
+        },
+        {
+            "name": "gemini-2.5-pro",
+            "llm": ChatGoogleGenerativeAI(
+                model="gemini-2.5-pro",
+                google_api_key=settings.GOOGLE_API_KEY,
+                max_output_tokens=settings.MAX_TOKENS,
+                temperature=settings.DEFAULT_LLM_TEMPERATURE,
+            ),
+        },
+        {
+            "name": "gemini-2.5-flash",
+            "llm": ChatGoogleGenerativeAI(
+                model="gemini-2.5-flash",
+                google_api_key=settings.GOOGLE_API_KEY,
+                max_output_tokens=settings.MAX_TOKENS,
+                temperature=settings.DEFAULT_LLM_TEMPERATURE,
             ),
         },
     ]
@@ -121,7 +102,10 @@ class LLMRegistry:
         # If user provides kwargs, create a new instance with those args
         if kwargs:
             logger.debug("creating_llm_with_custom_args", model_name=model_name, custom_args=list(kwargs.keys()))
-            return ChatOpenAI(model=model_name, api_key=settings.OPENAI_API_KEY, **kwargs)
+            # Map max_tokens to max_output_tokens for Gemini if present
+            if "max_tokens" in kwargs:
+                kwargs["max_output_tokens"] = kwargs.pop("max_tokens")
+            return ChatGoogleGenerativeAI(model=model_name, google_api_key=settings.GOOGLE_API_KEY, **kwargs)
 
         # Return the default instance
         logger.debug("using_default_llm_instance", model_name=model_name)
@@ -225,42 +209,37 @@ class LLMService:
     @retry(
         stop=stop_after_attempt(settings.MAX_LLM_CALL_RETRIES),
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((RateLimitError, APITimeoutError, APIError)),
+        # Using broad exception for retry since Google API errors vary
+        retry=retry_if_exception_type(Exception),
         before_sleep=before_sleep_log(logger, "WARNING"),
         reraise=True,
     )
-    async def _call_llm_with_retry(self, messages: List[BaseMessage]) -> BaseMessage:
+    async def _call_llm_with_retry(self, messages: List[BaseMessage], callbacks: Optional[List] = None) -> BaseMessage:
         """Call the LLM with automatic retry logic.
 
         Args:
             messages: List of messages to send to the LLM
+            callbacks: Optional list of callbacks for the LLM call
 
         Returns:
             BaseMessage response from the LLM
 
         Raises:
-            OpenAIError: If all retries fail
+            Exception: If all retries fail
         """
         if not self._llm:
             raise RuntimeError("llm not initialized")
 
         try:
-            response = await self._llm.ainvoke(messages)
+            response = await self._llm.ainvoke(messages, config={"callbacks": callbacks})
             logger.debug("llm_call_successful", message_count=len(messages))
             return response
-        except (RateLimitError, APITimeoutError, APIError) as e:
-            logger.warning(
-                "llm_call_failed_retrying",
-                error_type=type(e).__name__,
-                error=str(e),
-                exc_info=True,
-            )
-            raise
-        except OpenAIError as e:
+        except Exception as e:
             logger.error(
                 "llm_call_failed",
                 error_type=type(e).__name__,
                 error=str(e),
+                exc_info=True,
             )
             raise
 
@@ -268,6 +247,7 @@ class LLMService:
         self,
         messages: List[BaseMessage],
         model_name: Optional[str] = None,
+        callbacks: Optional[List] = None,
         **model_kwargs,
     ) -> BaseMessage:
         """Call the LLM with the specified messages and circular fallback.
@@ -306,9 +286,9 @@ class LLMService:
 
         while models_tried < total_models:
             try:
-                response = await self._call_llm_with_retry(messages)
+                response = await self._call_llm_with_retry(messages, callbacks=callbacks)
                 return response
-            except OpenAIError as e:
+            except Exception as e:
                 last_error = e
                 models_tried += 1
 
@@ -363,6 +343,17 @@ class LLMService:
             self._llm = self._llm.bind_tools(tools)
             logger.debug("tools_bound_to_llm", tool_count=len(tools))
         return self
+
+    def get_name(self) -> str:
+        """Get the name of the current LLM.
+
+        Returns:
+            The name of the current model.
+        """
+        all_names = LLMRegistry.get_all_names()
+        if 0 <= self._current_model_index < len(all_names):
+            return all_names[self._current_model_index]
+        return "unknown"
 
 
 # Create global LLM service instance

@@ -31,4 +31,5 @@ class Session(BaseModel, table=True):
     id: str = Field(primary_key=True)
     user_id: int = Field(foreign_key="user.id")
     name: str = Field(default="")
+    subject: str = Field(default="general", description="Subject/class for this session (e.g. matematica, historia)")
     user: "User" = Relationship(back_populates="sessions")

@@ -60,7 +60,9 @@ async def chat(
             message_count=len(chat_request.messages),
         )
 
-        result = await agent.get_response(chat_request.messages, session.id, user_id=session.user_id)
+        result = await agent.get_response(
+            chat_request.messages, session.id, user_id=session.user_id, subject=session.subject
+        )
 
         logger.info("chat_request_processed", session_id=session.id)
 
@@ -108,10 +110,14 @@ async def chat_stream(
             """
             try:
                 full_response = ""
-                with llm_stream_duration_seconds.labels(model=agent.llm_service.get_llm().get_name()).time():
+                with llm_stream_duration_seconds.labels(model=agent.llm_service.get_name()).time():
                     async for chunk in agent.get_stream_response(
-                        chat_request.messages, session.id, user_id=session.user_id
+                        chat_request.messages, session.id, user_id=session.user_id, subject=session.subject
                     ):
+                        if not isinstance(chunk, str):
+                            logger.warning("received_non_string_chunk", type=type(chunk).__name__, session_id=session.id)
+                            chunk = str(chunk)
+
                         full_response += chunk
                         response = StreamResponse(content=chunk, done=False)
                         yield f"data: {json.dumps(response.model_dump())}\n\n"
