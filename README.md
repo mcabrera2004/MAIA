@@ -403,7 +403,7 @@ For detailed API documentation, visit `/docs` (Swagger UI) or `/redoc` (ReDoc) w
 ## 📚 Project Structure
 
 ```
-whatsapp-food-order/
+agent/
 ├── app/
 │   ├── api/
 │   │   └── v1/
@@ -436,6 +436,14 @@ whatsapp-food-order/
 │   │   ├── __init__.py
 │   │   └── graph.py                 # Graph utility functions
 │   └── main.py                      # Application entry point
+├── frontend/                        # Frontend (Next.js UI)
+│   ├── app/                         # Next.js App Router pages
+│   ├── components/                  # React Components & UI
+│   ├── hooks/                       # Custom React hooks
+│   ├── lib/                         # API clients and utilities
+│   ├── public/                      # Static assets
+│   ├── styles/                      # Global CSS styles
+│   └── package.json                 # Frontend dependencies
 ├── evals/
 │   ├── evaluator.py                 # Evaluation logic
 │   ├── main.py                      # Evaluation CLI
@@ -450,17 +458,8 @@ whatsapp-food-order/
 ├── Makefile                         # Development commands
 ├── pyproject.toml                   # Python dependencies
 ├── schema.sql                       # Database schema
-├── SECURITY.md                      # Security policy
 └── README.md                        # This file
 ```
-
-## 🛡️ Security
-
-For security concerns, please review our [Security Policy](SECURITY.md).
-
-## 📄 License
-
-This project is licensed under the terms specified in the [LICENSE](LICENSE) file.
 
 ## 🤝 Contributing
 
@@ -471,7 +470,3 @@ Contributions are welcome! Please ensure:
 3. New features include appropriate tests
 4. Documentation is updated
 5. Commit messages follow conventional commits format
-
-## 📞 Support
-
-For issues, questions, or contributions, please open an issue on the project repository
