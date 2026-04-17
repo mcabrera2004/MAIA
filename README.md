@@ -1,6 +1,6 @@
-# FastAPI LangGraph Agent Template
+# AI Agent Platform
 
-A production-ready FastAPI template for building AI agent applications with LangGraph integration. This template provides a robust foundation for building scalable, secure, and maintainable AI agent services.
+A production-ready FastAPI application for building AI agent workflows with LangGraph integration. It provides a robust foundation for building scalable, secure, and maintainable AI agent services.
 
 ## 🌟 Features
 
@@ -114,6 +114,35 @@ make [dev|staging|prod] # e.g. make dev
 ```bash
 http://localhost:8000/docs
 ```
+
+#### Frontend Development & Deployment
+
+The frontend represents the user interface built with Next.js. To run it locally:
+
+1. Navigate to the frontend directory:
+```bash
+cd frontend
+```
+2. Install dependencies:
+```bash
+pnpm install
+```
+3. Set up the environment variables:
+Copy `.env.example` to `.env.local` and ensure `NEXT_PUBLIC_API_URL` points to your backend.
+```bash
+cp .env.example .env.local
+```
+4. Run the development server:
+```bash
+pnpm dev
+```
+
+**Deploying to Production (e.g., Vercel)**
+1. Connect your repository to Vercel.
+2. Set the **Framework Preset** to Next.js.
+3. Set the **Root Directory** to `frontend`.
+4. Add the `NEXT_PUBLIC_API_URL` environment variable pointing to your deployed backend URL.
+5. Click **Deploy**.
 
 #### Using Docker
 

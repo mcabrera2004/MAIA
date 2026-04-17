@@ -6,6 +6,7 @@ Only professors can ingest and delete documents.
 """
 
 import io
+import re
 from typing import List
 
 from fastapi import (
@@ -214,18 +215,11 @@ async def ingest_file(
             text_parts = []
             for page in reader.pages:
                 text = page.extract_text() or ""
-                # Normalize whitespace: replace multiple newlines/spaces with a single one
-                # but preserve paragraph breaks (\n\n) if they exist.
-                # However, many PDFs have \n after every line.
-                # A safer bet for learning material is to replace single \n with " " 
-                # and multiple \n with a paragraph break.
-                text = text.replace("\r", "")
-                # Rejoin lines that might have been split
-                lines = [line.strip() for line in text.split("\n")]
-                # Join lines with spaces, then fix double spaces
-                cleaned_text = " ".join(lines)
-                cleaned_text = " ".join(cleaned_text.split())
-                text_parts.append(cleaned_text)
+                # Normalize whitespace: replace any sequence of whitespace (newlines, tabs, spaces)
+                # with a single space to fix broken PDF extractions
+                cleaned_text = re.sub(r"\s+", " ", text).strip()
+                if cleaned_text:
+                    text_parts.append(cleaned_text)
             text_content = "\n\n".join(text_parts)
         else:
             try:

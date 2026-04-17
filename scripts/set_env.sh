@@ -52,7 +52,7 @@ else
     EXAMPLE_FILE="$PROJECT_ROOT/.env.example"
     if [ -f "$EXAMPLE_FILE" ]; then
         cp "$EXAMPLE_FILE" "$ENV_FILE"
-        echo -e "${GREEN}Created $ENV_FILE from template.${NC}"
+        echo -e "${GREEN}Created $ENV_FILE from example.${NC}"
         echo -e "${PURPLE}Please update it with your configuration.${NC}"
 
         # Export all environment variables from the new file

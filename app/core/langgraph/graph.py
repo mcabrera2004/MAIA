@@ -420,6 +420,11 @@ class LangGraphAgent:
                 config,
                 stream_mode="messages",
             ):
+                # Professional Filter: Only send tokens to the UI if they come from the AI Assistant.
+                # This hides "the guts" (internal RAG tool outputs) from the user.
+                if token.__class__.__name__ not in ["AIMessageChunk", "AIMessage"]:
+                    continue
+
                 try:
                     content = token.content
                     # Handle cases where content might be a list of blocks

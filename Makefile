@@ -53,7 +53,7 @@ clean:
 	rm -rf .pytest_cache
 
 docker-build:
-	docker build -t fastapi-langgraph-template .
+	docker build -t ai-agent-platform .
 
 docker-build-env:
 	@if [ -z "$(ENV)" ]; then \
